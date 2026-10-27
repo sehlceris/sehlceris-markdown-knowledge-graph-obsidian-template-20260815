@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { buildLinkGraph, resolveLink, resolveTarget, shortestTarget } from '../lib/graph.ts';
-import { entryOf, loadVault, type VaultEntry } from '../lib/vault.ts';
+import { entryOf, type VaultEntry } from '../lib/vault.ts';
+import { loadVault } from '../lib/vault-fs.ts';
 import { makeVault, note } from './helpers.ts';
 
 const notes = (...paths: string[]): VaultEntry[] => paths.map((p) => entryOf(p, true));

@@ -11,6 +11,7 @@ import { writeFileSync } from 'node:fs';
 import { buildLinkGraph } from './graph.ts';
 import { count } from './move.ts';
 import type { Vault } from './vault.ts';
+import type { DiskVault } from './vault-fs.ts';
 
 export interface UnlinkEdit {
   path: string;
@@ -46,7 +47,7 @@ export function planUnlinkMissing(vault: Vault): UnlinkMissingPlan {
 
 /** A note edited between plan and apply — Obsidian saves constantly — is skipped whole
  *  rather than spliced at offsets that no longer hold the links the plan saw. */
-export function applyUnlinkMissing(vault: Vault, plan: UnlinkMissingPlan): { edited: string[]; errors: string[] } {
+export function applyUnlinkMissing(vault: DiskVault, plan: UnlinkMissingPlan): { edited: string[]; errors: string[] } {
   const edited: string[] = [];
   const errors: string[] = [];
   for (const [path, edits] of Map.groupBy(plan.edits, (e) => e.path)) {
@@ -68,7 +69,7 @@ export function applyUnlinkMissing(vault: Vault, plan: UnlinkMissingPlan): { edi
   return { edited, errors };
 }
 
-export function executeUnlinkMissing(vault: Vault, opts: { dryRun: boolean }) {
+export function executeUnlinkMissing(vault: DiskVault, opts: { dryRun: boolean }) {
   const plan = planUnlinkMissing(vault);
   const applied = opts.dryRun ? null : applyUnlinkMissing(vault, plan);
   const done = applied ? plan.edits.filter((e) => applied.edited.includes(e.path)) : plan.edits;

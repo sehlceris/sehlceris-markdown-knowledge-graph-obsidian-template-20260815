@@ -8,8 +8,9 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { buildLinkGraph } from '../lib/graph.ts';
-import { type AppliedMove, applyMove, planMove, resolveVaultPathInput } from '../lib/move.ts';
-import { loadVault } from '../lib/vault.ts';
+import { planMove } from '../lib/move.ts';
+import { type AppliedMove, applyMove, resolveVaultPathInput } from '../lib/move-fs.ts';
+import { loadVault } from '../lib/vault-fs.ts';
 import { makeVault, read, snapshot } from './helpers.ts';
 
 function move(dir: string, from: string, to: string) {

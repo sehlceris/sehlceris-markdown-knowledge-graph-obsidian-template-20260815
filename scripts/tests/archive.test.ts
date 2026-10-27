@@ -7,10 +7,12 @@ import { chmodSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { archiveAll, type ArchiveOptions, planArchive, planUnarchive } from '../lib/archive.ts';
+import { type ArchiveOptions, planArchive, planUnarchive } from '../lib/archive.ts';
+import { archiveAll } from '../lib/archive-fs.ts';
 import { buildLinkGraph } from '../lib/graph.ts';
-import { type AppliedMove, applyMove } from '../lib/move.ts';
-import { loadVault } from '../lib/vault.ts';
+import { planMove, renderMove } from '../lib/move.ts';
+import { type AppliedMove, applyMove } from '../lib/move-fs.ts';
+import { loadVault } from '../lib/vault-fs.ts';
 import { makeVault, read, snapshot } from './helpers.ts';
 
 const TODAY = new Date(2026, 7, 15);
@@ -184,6 +186,21 @@ describe('planArchive', () => {
     assert.equal(applied.ok, false);
     assert.deepEqual(snapshot(dir), before);
   });
+
+  // With no 08-archive/03-initiatives/ yet, nothing else stands in the way of moving the
+  // whole bucket.
+  for (const path of ['03-initiatives', '03-initiatives/', '08-archive']) {
+    it(`refuses to archive the bucket ${JSON.stringify(path)} itself, and touches nothing`, () => {
+      const dir = makeVault({ '03-initiatives/deck.md': initiative('active') });
+      const before = snapshot(dir);
+
+      const { plan, applied } = archive(dir, path);
+
+      assert.match(plan.conflicts.join(), /not archived whole/);
+      assert.equal(applied.ok, false);
+      assert.deepEqual(snapshot(dir), before);
+    });
+  }
 });
 
 describe('planUnarchive', () => {
@@ -204,6 +221,17 @@ describe('planUnarchive', () => {
     const { plan, applied } = unarchive(dir, '03-initiatives/deck-rebuild.md');
 
     assert.deepEqual(plan.conflicts, ['not archived: 03-initiatives/deck-rebuild.md']);
+    assert.equal(applied.ok, false);
+    assert.deepEqual(snapshot(dir), before);
+  });
+
+  it('refuses to unarchive a whole archived bucket, and touches nothing', () => {
+    const dir = makeVault({ '08-archive/04-areas/garden.md': initiative('done') });
+    const before = snapshot(dir);
+
+    const { plan, applied } = unarchive(dir, '08-archive/04-areas');
+
+    assert.deepEqual(plan.conflicts, ['a bucket is not unarchived whole: 08-archive/04-areas']);
     assert.equal(applied.ok, false);
     assert.deepEqual(snapshot(dir), before);
   });
@@ -237,6 +265,40 @@ describe('planUnarchive', () => {
       initiative('active').replace('updated: 2026-06-01', 'updated: 2026-08-15').replace('status: active', 'status: done')
     );
     assert.equal(read(dir, '06-knowledge/cone-6-firing-schedule.md'), knowledge);
+  });
+});
+
+describe('renderMove', () => {
+  // An archive never breaks a link — paths resolve by suffix — so a rename carries the
+  // link rewrite here, with a bump on the same note the way archive plans one.
+  it('renders the frontmatter bump on top of the link rewrite in the same note', () => {
+    const own = '---\ncreated: 2026-01-01\nupdated: 2026-02-02\ntags:\n  - pottery\n---\n\nSee [[glaze]].\n';
+    const dir = makeVault({
+      '06-knowledge/glaze.md': own,
+      '05-entities/potter.md': 'Uses [[glaze|the glaze]].\n',
+    });
+    const vault = loadVault(dir);
+    const bump = { path: '06-knowledge/shino.md', key: 'updated', value: '2026-08-15' };
+
+    const writes = renderMove(vault, planMove(vault, '06-knowledge/glaze.md', '06-knowledge/shino.md', [bump]));
+
+    const linked = own.replace('[[glaze]]', '[[shino]]');
+    assert.deepEqual(writes.links, [
+      { path: '05-entities/potter.md', expected: 'Uses [[glaze|the glaze]].\n', text: 'Uses [[shino|the glaze]].\n' },
+      { path: '06-knowledge/glaze.md', expected: own, text: linked },
+    ]);
+    assert.deepEqual(writes.frontmatter, [
+      { path: '06-knowledge/shino.md', expected: linked, text: linked.replace('updated: 2026-02-02', 'updated: 2026-08-15') },
+    ]);
+  });
+
+  it('leaves out a frontmatter write that changes nothing', () => {
+    const dir = makeVault({ '06-knowledge/glaze.md': knowledge.replace('2026-02-02', '2026-08-15') });
+    const vault = loadVault(dir);
+
+    const writes = renderMove(vault, planArchive(vault, '06-knowledge/glaze.md', { today: TODAY }));
+
+    assert.deepEqual(writes, { links: [], frontmatter: [] });
   });
 });
 

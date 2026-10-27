@@ -2,9 +2,10 @@
 // leaves every inbound wikilink to rot.
 
 import { type Command, type Context, UsageError } from '../cli.ts';
-import { archiveAll } from '../lib/archive.ts';
-import { executeMove, planMove, resolveVaultPathInput } from '../lib/move.ts';
-import { loadVault } from '../lib/vault.ts';
+import { archiveAll } from '../lib/archive-fs.ts';
+import { planMove } from '../lib/move.ts';
+import { executeMove, resolveVaultPathInput } from '../lib/move-fs.ts';
+import { loadVault } from '../lib/vault-fs.ts';
 
 export const move: Command = {
   name: 'move',

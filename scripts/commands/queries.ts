@@ -3,7 +3,8 @@
 
 import { type Command, type CommandResult, UsageError } from '../cli.ts';
 import { buildLinkGraph, resolveLink, resolveTarget } from '../lib/graph.ts';
-import { loadVault, type Vault } from '../lib/vault.ts';
+import type { Vault } from '../lib/vault.ts';
+import { loadVault } from '../lib/vault-fs.ts';
 
 /** The one note `arg` names, or the failed result to return instead of guessing. */
 function findNote(vault: Vault, arg: string | undefined): { path: string } | { fail: CommandResult } {

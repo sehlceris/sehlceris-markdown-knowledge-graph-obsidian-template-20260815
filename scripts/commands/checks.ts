@@ -3,7 +3,7 @@
 import type { Command } from '../cli.ts';
 import { checkFrontmatter, checkLinks, type FrontmatterReport, type LinksReport } from '../lib/checks.ts';
 import { executeUnlinkMissing } from '../lib/unlink-missing.ts';
-import { loadVault } from '../lib/vault.ts';
+import { loadVault } from '../lib/vault-fs.ts';
 
 function linkLines(report: LinksReport): string[] {
   return [

@@ -8,7 +8,7 @@ import { describe, it } from 'node:test';
 
 import { checkLinks } from '../lib/checks.ts';
 import { applyUnlinkMissing, executeUnlinkMissing, planUnlinkMissing } from '../lib/unlink-missing.ts';
-import { loadVault } from '../lib/vault.ts';
+import { loadVault } from '../lib/vault-fs.ts';
 import { makeVault, read, snapshot } from './helpers.ts';
 
 describe('planUnlinkMissing', () => {
