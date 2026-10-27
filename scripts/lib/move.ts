@@ -10,14 +10,13 @@
 // against the *future* entry list, so a moved note never competes with its own old path.
 //
 // Split into plan and apply: the plan is exactly what `--dry-run` prints and what the
-// apply writes.
-
-import { existsSync, mkdirSync, readdirSync, realpathSync, renameSync, rmdirSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+// apply writes. This module plans and renders the text to write; the writing is
+// move-fs.ts for the CLI and the Obsidian plugin's apply for the app. Nothing here imports
+// Node, so both can use it.
 
 import { setFrontmatterKey } from './frontmatter.ts';
 import { resolveLink, shortestTarget } from './graph.ts';
-import { entryOf, isContained, isInBuckets, normalizeVaultPath, toVaultPath, type Vault, type VaultEntry } from './vault.ts';
+import { entryOf, isInBuckets, normalizeVaultPath, type Vault, type VaultEntry } from './vault.ts';
 import { parseWikilinks } from './wikilinks.ts';
 
 export interface LinkEdit {
@@ -88,30 +87,8 @@ function refusals(vault: Vault, from: string, to: string): string[] {
   if (!isInBuckets(to, vault.config)) out.push(`destination is outside the vault buckets: ${to}`);
   if (movedFiles(vault, from, to).length === 0) out.push(`no such note or directory: ${from}`);
   if (to.startsWith(`${from}/`)) out.push(`destination is inside the source: ${to}`);
-  // existsSync, not the index: a destination the walk skipped would still be overwritten.
-  // But on a case-insensitive filesystem existsSync says yes for the source itself, so
-  // `Note.md` -> `note.md` is checked for file identity first, the way `git mv` does.
-  if (
-    isContained(vault.baseDir, from) &&
-    isContained(vault.baseDir, to) &&
-    existsSync(vault.absolute(to)) &&
-    !isSameFile(vault.absolute(from), vault.absolute(to))
-  ) {
-    out.push(`destination already exists: ${to}`);
-  }
+  if (vault.occupied(to, from)) out.push(`destination already exists: ${to}`);
   return out;
-}
-
-/** Device plus inode — true for `Note.md` and `note.md` on a case-insensitive filesystem,
- *  which realpath does not reveal. */
-function isSameFile(a: string, b: string): boolean {
-  try {
-    const x = statSync(a);
-    const y = statSync(b);
-    return x.dev === y.dev && x.ino === y.ino;
-  } catch {
-    return false;
-  }
 }
 
 function computeEdits(vault: Vault, files: { from: string; to: string }[]): LinkEdit[] {
@@ -149,145 +126,49 @@ function computeEdits(vault: Vault, files: { from: string; to: string }[]): Link
   return edits;
 }
 
-export interface AppliedMove {
-  ok: boolean;
-  /** Notes whose links were spliced. */
-  edited: string[];
-  moved: { from: string; to: string }[];
-  /** Notes whose frontmatter actually changed. */
-  frontmatter: string[];
-  /** Directories removed because the move emptied them. */
-  removedDirs: string[];
-  /** Why it stopped, what had already been written, and how to recover. Empty when ok. */
-  errors: string[];
+/** One file's full new contents. `expected` is what the file holds when the write is due,
+ *  so an apply that cannot hold a lock — Obsidian saves constantly — can refuse to splice
+ *  offsets into a note that changed under it. */
+export interface TextWrite {
+  path: string;
+  expected: string;
+  text: string;
 }
 
-export function applyMove(vault: Vault, plan: MovePlan): AppliedMove {
-  const result: AppliedMove = { ok: true, edited: [], moved: [], frontmatter: [], removedDirs: [], errors: [] };
-  if (plan.conflicts.length) return { ...result, ok: false, errors: [...plan.conflicts] };
-
-  // One guard over every write: a throw halfway must still report what already landed.
-  try {
-    // Edits before the move, so a link inside a moving file is spliced while it is still at
-    // the offsets the plan recorded. Last link first keeps every earlier offset valid.
-    for (const [path, edits] of Map.groupBy(plan.edits, (e) => e.path)) {
-      let text = vault.read(path);
-      for (const edit of edits.toSorted((a, b) => b.start - a.start)) {
-        text = text.slice(0, edit.start) + edit.replacement + text.slice(edit.end);
-      }
-      step(`could not rewrite links in ${path}`, () => writeFileSync(vault.absolute(path), text));
-      result.edited.push(path);
+/** The plan as whole-file writes, in apply order: link rewrites land before the move, at
+ *  the old paths; frontmatter lands after it, at the new ones, and only where a value
+ *  actually changes. */
+export function renderMove(vault: Vault, plan: MovePlan): { links: TextWrite[]; frontmatter: TextWrite[] } {
+  const links: TextWrite[] = [];
+  for (const [path, edits] of byPath(plan.edits)) {
+    const expected = vault.read(path);
+    let text = expected;
+    // Last link first keeps every earlier offset valid.
+    for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+      text = text.slice(0, edit.start) + edit.replacement + text.slice(edit.end);
     }
-
-    moveFiles(vault, plan, result);
-
-    for (const [path, sets] of Map.groupBy(plan.frontmatter, (f) => f.path)) {
-      let text = vault.read(path);
-      let changed = false;
-      for (const set of sets) {
-        const next = setFrontmatterKey(text, set.key, set.value);
-        text = next.text;
-        changed ||= next.changed;
-      }
-      if (!changed) continue;
-      step(`could not set frontmatter in ${path}`, () => writeFileSync(vault.absolute(path), text));
-      result.frontmatter.push(path);
-    }
-
-    pruneEmptyDirs(vault, plan, result);
-  } catch (err) {
-    return halted(result, plan, err);
-  }
-  return result;
-}
-
-/** A case-only rename on a case-insensitive filesystem goes through a temporary name in one
- *  step, which is what `git mv` does; a plain rename there is a no-op for a directory. */
-function moveFiles(vault: Vault, plan: MovePlan, result: AppliedMove): void {
-  const fromAbs = vault.absolute(plan.from);
-  const toAbs = vault.absolute(plan.to);
-
-  if (plan.files.length > 0 && isSameFile(fromAbs, toAbs)) {
-    step(`could not rename ${plan.from} -> ${plan.to}`, () => {
-      const temp = join(dirname(toAbs), `.kg-rename-${process.pid}-${Date.now()}`);
-      renameSync(fromAbs, temp);
-      try {
-        renameSync(temp, toAbs);
-      } catch (err) {
-        renameSync(temp, fromAbs);
-        throw err;
-      }
-    });
-    result.moved.push(...plan.files);
-    return;
+    links.push({ path, expected, text });
   }
 
-  for (const file of plan.files) {
-    step(`could not move ${file.from} -> ${file.to}`, () => {
-      mkdirSync(dirname(vault.absolute(file.to)), { recursive: true });
-      renameSync(vault.absolute(file.from), vault.absolute(file.to));
-    });
-    result.moved.push(file);
+  const linked = new Map(links.map((w) => [w.path, w.text]));
+  const source = new Map(plan.files.map((f) => [f.to, f.from]));
+  const frontmatter: TextWrite[] = [];
+  for (const [path, sets] of byPath(plan.frontmatter)) {
+    const from = source.get(path) ?? path;
+    const expected = linked.get(from) ?? vault.read(from);
+    let text = expected;
+    for (const set of sets) text = setFrontmatterKey(text, set.key, set.value).text;
+    if (text !== expected) frontmatter.push({ path, expected, text });
   }
+  return { links, frontmatter };
 }
 
-/** A directory the move emptied is removed, up to but never including a bucket root. */
-function pruneEmptyDirs(vault: Vault, plan: MovePlan, result: AppliedMove): void {
-  for (const start of new Set(plan.files.map((f) => dirname(f.from)))) {
-    let dir = start;
-    while (dir && dir !== '.' && !vault.config.buckets.includes(dir)) {
-      const abs = vault.absolute(dir);
-      if (!existsSync(abs) || readdirSync(abs).length > 0) break;
-      step(`could not remove the emptied directory ${dir}`, () => rmdirSync(abs));
-      result.removedDirs.push(dir);
-      dir = dirname(dir);
-    }
-  }
-}
-
-function step(what: string, fn: () => void): void {
-  try {
-    fn();
-  } catch (err) {
-    throw new Error(`${what}: ${message(err)}`);
-  }
-}
-
-/** Everything already written when a step threw, then how to repair it. With nothing moved,
- *  the rewritten links read as already-broken to the next plan, which declines to touch them,
- *  so re-running the same command completes the move cleanly. Once files have moved, the
- *  same command will refuse, and the rest is a manual job — say which. */
-function halted(result: AppliedMove, plan: MovePlan, err: unknown): AppliedMove {
-  const errors = [message(err)];
-  if (result.edited.length) errors.push(`links were already rewritten in: ${result.edited.join(', ')}`);
-  if (result.moved.length) {
-    errors.push(`files were already moved: ${result.moved.map((m) => `${m.from} -> ${m.to}`).join(', ')}`);
-  }
-  if (result.frontmatter.length) errors.push(`frontmatter was already set in: ${result.frontmatter.join(', ')}`);
-  if (result.removedDirs.length) errors.push(`directories were already removed: ${result.removedDirs.join(', ')}`);
-  errors.push(
-    result.moved.length === 0
-      ? 'nothing was moved: fix the cause and run the identical command again'
-      : `${result.moved.length} of ${plan.files.length} files are already at the destination, so the` +
-          ' same command will now refuse; finish the remaining steps by hand'
-  );
-  return { ...result, ok: false, errors };
-}
-
-export interface MoveOutcome {
-  ok: boolean;
-  /** Lines to print. Nothing in lib/ writes to a stream. */
-  human: string[];
-  plan: MovePlan;
-}
-
-/** Plan in, outcome out: refuse, describe a dry run, or apply and describe. The commands
- *  differ only in how they compute the destination; everything after is this. */
-export function executeMove(vault: Vault, plan: MovePlan, opts: { verb: string; dryRun: boolean }): MoveOutcome {
-  if (plan.conflicts.length) return { ok: false, human: plan.conflicts.map((c) => `refused: ${c}`), plan };
-  if (opts.dryRun) return { ok: true, human: ['dry run — nothing written', ...describeMove(plan, opts)], plan };
-  const applied = applyMove(vault, plan);
-  return { ok: applied.ok, human: applied.ok ? describeMove(plan, opts) : applied.errors, plan };
+/** Map.groupBy by hand: this runs in Obsidian's mobile WebView, where an iOS older than
+ *  17.4 has no Map.groupBy, and a bundler lowers syntax but never polyfills a library call. */
+function byPath<T extends { path: string }>(items: T[]): Map<string, T[]> {
+  const out = new Map<string, T[]>();
+  for (const item of items) out.set(item.path, [...(out.get(item.path) ?? []), item]);
+  return out;
 }
 
 /** Every verb used ends in "e", so the past tense is the verb plus "d". */
@@ -308,30 +189,4 @@ export function describeMove(plan: MovePlan, opts: { verb: string; dryRun: boole
   ];
 }
 
-/** A path typed at the command line may be vault-relative (`03-initiatives/x.md`, from
- *  anywhere) or cwd-relative (`x.md`, standing in `03-initiatives/`). One that names a bucket
- *  or already exists under the root is vault-relative; anything else is read against cwd. */
-export function resolveVaultPathInput(vault: Vault, input: string, cwd: string): string {
-  const normalized = normalizeVaultPath(input);
-  if (
-    !isAbsolute(input) &&
-    (isInBuckets(normalized, vault.config) ||
-      (isContained(vault.baseDir, normalized) && existsSync(vault.absolute(normalized))))
-  ) {
-    return normalized;
-  }
-
-  // Both sides through realpath, or a vault reached by a symlink (all of macOS's /tmp)
-  // relativizes to "../" and is refused. The leaf stays as typed: a destination does not
-  // exist yet.
-  const abs = isAbsolute(input) ? input : resolve(cwd, input);
-  const parent = dirname(abs);
-  return toVaultPath(
-    realpathSync(vault.baseDir),
-    existsSync(parent) ? join(realpathSync(parent), basename(abs)) : abs
-  );
-}
-
 export const count = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
-
-const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));

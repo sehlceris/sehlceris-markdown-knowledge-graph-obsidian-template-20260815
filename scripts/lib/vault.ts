@@ -1,13 +1,12 @@
-// A loaded vault: which directories are scanned, the notes and assets found in them, and
-// the vault-owned tag vocabulary.
+// A vault as the planning code sees it: which directories are scanned, the notes and assets
+// found in them, and the vault-owned tag vocabulary.
 //
 // Vault paths are relative POSIX paths from the vault root — "03-initiatives/deck/plan.md".
-// Every result and message speaks them; absolute paths exist only at the filesystem edge.
+// Every result and message speaks them; absolute paths exist only at the filesystem edge,
+// which is vault-fs.ts. This module imports nothing from Node: the Obsidian plugin bundles
+// it, and Obsidian on a phone has no Node to import.
 
-import { readdirSync, readFileSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-
-import { loadTagVocabulary, type TagVocabulary } from './vocabulary.ts';
+import type { TagVocabulary } from './vocabulary.ts';
 
 // ─── Policy ──────────────────────────────────────────────────────────────────
 
@@ -56,18 +55,6 @@ export function normalizeVaultPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
 }
 
-export function toVaultPath(baseDir: string, absPath: string): string {
-  return normalizeVaultPath(relative(resolve(baseDir), absPath));
-}
-
-/** Lexical, deliberately: on macOS `/var` is a symlink to `/private/var`, so comparing a
- *  realpath'd candidate against a lexical base puts every temp-dir note outside its vault. */
-export function isContained(baseDir: string, vaultPath: string): boolean {
-  const base = resolve(baseDir);
-  const abs = resolve(base, normalizeVaultPath(vaultPath));
-  return abs === base || abs.startsWith(base + sep);
-}
-
 /** Path without ".md", split on "/". Assets keep their extension: `![[diagram.png]]`
  *  writes it. */
 export function segmentsOf(vaultPath: string): string[] {
@@ -97,12 +84,24 @@ export function unarchivePathFor(vaultPath: string, config = DEFAULT_CONFIG): st
 
 export function isInBuckets(vaultPath: string, config = DEFAULT_CONFIG): boolean {
   const path = normalizeVaultPath(vaultPath);
-  if (path.startsWith('../') || isAbsolute(path)) return false;
+  if (/^(\/|[A-Za-z]:)/.test(path) || path.split('/').includes('..')) return false;
   return config.buckets.some((b) => path === b || path.startsWith(`${b}/`));
 }
 
-function isSkipped(vaultPath: string, config: VaultConfig): boolean {
+export function isSkipped(vaultPath: string, config = DEFAULT_CONFIG): boolean {
   return config.skipPrefixes.some((p) => vaultPath.startsWith(p));
+}
+
+/** Whether a file at this path is a vault entry: under a bucket, not skipped, and no dot
+ *  segment anywhere — .DS_Store is not an attachment, .obsidian/ is not a bucket. The disk
+ *  walk and the Obsidian plugin both filter by this, so they index the same vault. */
+export function isScanned(vaultPath: string, config = DEFAULT_CONFIG): boolean {
+  const path = normalizeVaultPath(vaultPath);
+  return (
+    config.buckets.some((b) => path.startsWith(`${b}/`)) &&
+    !path.split('/').some((s) => s.startsWith('.')) &&
+    !isSkipped(path, config)
+  );
 }
 
 // ─── The loaded vault ────────────────────────────────────────────────────────
@@ -119,8 +118,6 @@ export interface VaultEntry {
 }
 
 export interface Vault {
-  /** Absolute. */
-  baseDir: string;
   config: VaultConfig;
   /** null when the vocabulary is missing or unusable; `vocabularyError` says why. Only the
    *  frontmatter check needs it, so the link commands still work on a vault without one. */
@@ -133,77 +130,29 @@ export interface Vault {
   byPath: Map<string, VaultEntry>;
   /** File contents, utf8, line endings untouched. */
   read(path: string): string;
-  /** Vault path -> absolute path. Throws for a path outside the vault. */
-  absolute(path: string): string;
+  /** Whether moving `self` to `path` would overwrite something. Asks the storage, not the
+   *  index: a destination the scan skipped would still be overwritten. `self` is excluded
+   *  because a case-insensitive filesystem reports `note.md` as present when `Note.md` is
+   *  the file being renamed. */
+  occupied(path: string, self: string): boolean;
 }
 
 export function entryOf(vaultPath: string, isNote: boolean): VaultEntry {
   const segments = segmentsOf(vaultPath);
-  return { path: vaultPath, segments, basename: segments.at(-1) ?? '', isNote };
+  // Index, not .at(-1): the plugin runs this in iOS WebViews older than 15.4.
+  return { path: vaultPath, segments, basename: segments[segments.length - 1] ?? '', isNote };
 }
 
-export function loadVault(baseDir: string, config: Partial<VaultConfig> = {}): Vault {
-  const resolved = { ...DEFAULT_CONFIG, ...config };
-  const abs = resolve(baseDir);
-  const { notes: notePaths, assets: assetPaths } = walkVault(abs, resolved);
-
-  let vocabulary: TagVocabulary | null = null;
-  let vocabularyError: string | null = null;
-  try {
-    vocabulary = loadTagVocabulary(abs);
-  } catch (err) {
-    vocabularyError = err instanceof Error ? err.message : String(err);
-  }
-
-  const notes = notePaths.map((p) => entryOf(p, true));
-  const assets = assetPaths.map((p) => entryOf(p, false));
+/** The entry index over already-listed files, filtered and split by `isScanned` and the
+ *  `.md` suffix. Everything that is not a note is an asset — a leaf that links nothing and
+ *  owes nothing, but that a link may land on. */
+export function indexEntries(
+  paths: Iterable<string>,
+  config = DEFAULT_CONFIG
+): Pick<Vault, 'notes' | 'assets' | 'entries' | 'byPath'> {
+  const scanned = [...paths].map(normalizeVaultPath).filter((p) => isScanned(p, config)).sort();
+  const notes = scanned.filter((p) => p.endsWith('.md')).map((p) => entryOf(p, true));
+  const assets = scanned.filter((p) => !p.endsWith('.md')).map((p) => entryOf(p, false));
   const entries = [...notes, ...assets];
-
-  const absolute = (path: string): string => {
-    if (!isContained(abs, path)) throw new Error(`path escapes the vault: ${path}`);
-    return resolve(abs, normalizeVaultPath(path));
-  };
-
-  return {
-    baseDir: abs,
-    config: resolved,
-    vocabulary,
-    vocabularyError,
-    notes,
-    assets,
-    entries,
-    byPath: new Map(entries.map((e) => [e.path, e])),
-    read: (path) => readFileSync(absolute(path), 'utf8'),
-    absolute,
-  };
-}
-
-/** Every `.md` under the buckets is a note; everything else is an asset — a leaf that links
- *  nothing and owes nothing, but that a link may land on. A missing bucket is fine (a fresh
- *  vault has few); a missing root throws, because "the vault is gone" is not "empty". */
-export function walkVault(baseDir: string, config = DEFAULT_CONFIG): { notes: string[]; assets: string[] } {
-  const notes: string[] = [];
-  const assets: string[] = [];
-  const root = new Map(readdirSync(baseDir, { withFileTypes: true }).map((e) => [e.name, e]));
-
-  const collect = (dir: string): void => {
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      // Dotfiles are the filesystem's business: .DS_Store is not an attachment, .gitkeep
-      // is not a note.
-      if (e.isSymbolicLink() || e.name.startsWith('.')) continue;
-      const abs = join(dir, e.name);
-      const rel = toVaultPath(baseDir, abs);
-      if (isSkipped(rel, config)) continue;
-      if (e.isDirectory()) collect(abs);
-      else if (e.name.endsWith('.md')) notes.push(rel);
-      else assets.push(rel);
-    }
-  };
-
-  for (const bucket of config.buckets) {
-    const entry = root.get(bucket);
-    if (entry?.isDirectory()) collect(join(baseDir, bucket));
-  }
-
-  return { notes: notes.sort(), assets: assets.sort() };
+  return { notes, assets, entries, byPath: new Map(entries.map((e) => [e.path, e])) };
 }

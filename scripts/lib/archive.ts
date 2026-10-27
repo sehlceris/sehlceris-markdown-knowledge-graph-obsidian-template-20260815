@@ -2,14 +2,16 @@
 // `status: done` only where a status exists — never invent the key. Unarchiving is the same
 // move backwards and bumps `updated` only: nothing knows what the status was before, and
 // guessing `active` would be inventing a fact.
+//
+// Planning only, and no Node: the CLI applies these plans through archive-fs.ts, the
+// Obsidian plugin through its own apply.
 
 import { readFrontmatter } from './frontmatter.ts';
-import { executeMove, type FrontmatterEdit, movedFiles, type MovePlan, planMove, refusedPlan, resolveVaultPathInput } from './move.ts';
+import { type FrontmatterEdit, movedFiles, type MovePlan, planMove, refusedPlan } from './move.ts';
 import {
   archivePathFor,
   bucketOf,
   isArchived,
-  loadVault,
   normalizeVaultPath,
   unarchivePathFor,
   type Vault,
@@ -25,6 +27,7 @@ export interface ArchiveOptions {
 export function planArchive(vault: Vault, path: string, opts: ArchiveOptions = {}): MovePlan {
   const from = normalizeVaultPath(path);
   if (isArchived(from, vault.config)) return refusedPlan(from, from, [`already archived: ${from}`]);
+  if (isBucketRoot(vault, from)) return refusedPlan(from, from, [`a bucket is not archived whole: ${from}`]);
   const to = archivePathFor(from, vault.config);
   return planMove(vault, from, to, bumps(vault, from, to, opts, true));
 }
@@ -32,6 +35,9 @@ export function planArchive(vault: Vault, path: string, opts: ArchiveOptions = {
 export function planUnarchive(vault: Vault, path: string, opts: ArchiveOptions = {}): MovePlan {
   const from = normalizeVaultPath(path);
   if (!isArchived(from, vault.config)) return refusedPlan(from, from, [`not archived: ${from}`]);
+  if (isBucketRoot(vault, unarchivePathFor(from, vault.config))) {
+    return refusedPlan(from, from, [`a bucket is not unarchived whole: ${from}`]);
+  }
   const to = unarchivePathFor(from, vault.config);
   return planMove(vault, from, to, bumps(vault, from, to, opts, false));
 }
@@ -55,34 +61,9 @@ function bumps(vault: Vault, from: string, to: string, opts: ArchiveOptions, set
   return out;
 }
 
-export interface BatchResult {
-  ok: boolean;
-  human: string[];
-  plans: MovePlan[];
-}
-
-/** Several paths at once, each planned against a freshly loaded vault because the one
- *  before it changed the index. A refusal stops the run; the earlier paths already moved.
- *  Under --dry-run nothing moves, so every path is planned against the same vault. */
-export function archiveAll(
-  baseDir: string,
-  paths: string[],
-  opts: ArchiveOptions & { dryRun?: boolean; cwd?: string; unarchive?: boolean } = {}
-): BatchResult {
-  const plan = opts.unarchive ? planUnarchive : planArchive;
-  const verb = opts.unarchive ? 'unarchive' : 'archive';
-  const human: string[] = [];
-  const plans: MovePlan[] = [];
-
-  for (const input of paths) {
-    const vault = loadVault(baseDir);
-    const path = resolveVaultPathInput(vault, input, opts.cwd ?? baseDir);
-    const outcome = executeMove(vault, plan(vault, path, opts), { verb, dryRun: opts.dryRun === true });
-    plans.push(outcome.plan);
-    human.push(...outcome.human);
-    if (!outcome.ok) return { ok: false, human, plans };
-  }
-  return { ok: true, human, plans };
+/** `03-initiatives` itself, as opposed to something filed in it. */
+function isBucketRoot(vault: Vault, path: string): boolean {
+  return vault.config.buckets.includes(path);
 }
 
 /** Local date, not UTC: the vault's dates are the day the user is having. */

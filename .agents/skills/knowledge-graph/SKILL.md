@@ -311,7 +311,9 @@ folder, archiving a folder, or draining a day.
 
 `archive.ts` moves the file or folder to `08-archive/<same-bucket>/`, creating directories
 as needed, bumps `updated`, and sets `status: done` where the bucket carries a status. It
-never adds a `status` key to a note that had none.
+never adds a `status` key to a note that had none. A bucket itself is never archived whole.
+User can do the same from Obsidian — Archive / Unarchive in the file menu runs the same
+plan — so a note found already in `08-archive/` with a fresh `updated` got there properly.
 
 Archive when an initiative ships or is abandoned, or an area ends (job change, kid
 grows up, season over). Knowledge and references are archived rarely: outdated is not the

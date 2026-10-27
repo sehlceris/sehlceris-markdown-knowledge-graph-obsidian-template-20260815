@@ -1,0 +1,9 @@
+{
+  "id": "sehlceris-markdown-knowledge-graph",
+  "name": "Knowledge Graph",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.10",
+  "description": "Archive and unarchive from the file menu by the vault's rules: the 08-archive mirror, updated and status bumped, every wikilink still resolving.",
+  "author": "sehlceris",
+  "isDesktopOnly": false
+}

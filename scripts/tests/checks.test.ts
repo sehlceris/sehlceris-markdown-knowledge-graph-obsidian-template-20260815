@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { checkFrontmatter, checkLinks, type FrontmatterReport } from '../lib/checks.ts';
-import { loadVault } from '../lib/vault.ts';
+import { loadVault } from '../lib/vault-fs.ts';
 import { TAG_VOCABULARY_FILE } from '../lib/vocabulary.ts';
 import { makeVault, note } from './helpers.ts';
 

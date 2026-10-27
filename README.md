@@ -62,6 +62,16 @@ node scripts/kg.ts tag add <tag>              register a new domain tag
 
 `npm test` runs the suite.
 
+## Obsidian plugin
+
+The vault ships a small plugin, already built into `.obsidian/plugins/` and enabled: right-click
+(long-press on a phone) a note or folder for **Archive** or **Unarchive**, or run
+_Archive current note_ from the command palette. It runs the CLI's own archive plan — the
+`08-archive/` mirror, `updated` bumped, `status: done` where a status exists, links kept
+resolving — and works on desktop and mobile. Obsidian asks you to turn off Restricted mode
+once per device before it loads any plugin. Source is in `plugins/`; `npm install` then
+`npm run plugin:build` rebuilds it.
+
 The `.obsidian/` config turns on daily notes (into `01-daily/` from
 `templates/daily-note.md`), templates, and link-updating on rename. In VS Code, Foam gives
 the same rename-safe wikilinks. Agents: see `AGENTS.md` and the `knowledge-graph` skill in

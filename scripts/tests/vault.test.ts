@@ -9,15 +9,13 @@ import {
   DEFAULT_CONFIG,
   entryOf,
   isArchived,
-  isContained,
   isInBuckets,
-  loadVault,
+  isScanned,
   normalizeVaultPath,
   segmentsOf,
-  toVaultPath,
   unarchivePathFor,
-  walkVault,
 } from '../lib/vault.ts';
+import { isContained, loadVault, toVaultPath, walkVault } from '../lib/vault-fs.ts';
 import { TAG_VOCABULARY_FILE } from '../lib/vocabulary.ts';
 import { makeVault, TEST_TAG_VOCABULARY } from './helpers.ts';
 
@@ -118,9 +116,49 @@ describe('isInBuckets', () => {
     assert.equal(isInBuckets('06-knowledge-old/x.md'), false);
   });
 
+  it('rejects a path that climbs back out through ..', () => {
+    assert.equal(isInBuckets('06-knowledge/../../elsewhere/x.md'), false);
+    assert.equal(isInBuckets('06-knowledge/../06-knowledge/x.md'), false);
+    assert.equal(isInBuckets('C:/notes/x.md'), false);
+  });
+
   it('knows only the current buckets', () => {
     assert.equal(isInBuckets('99-deleted/x.md'), false);
     assert.equal(isInBuckets('06-misc-knowledge/x.md'), false);
+  });
+});
+
+describe('isScanned', () => {
+  for (const path of ['06-knowledge/a.md', '03-initiatives/deck/plan.png', 'templates/daily-note.md', '08-archive/01-daily/2026-01-01.md']) {
+    it(`indexes ${path}`, () => assert.equal(isScanned(path), true));
+  }
+
+  for (const path of [
+    'README.md',
+    '06-knowledge',
+    '06-knowledge/.DS_Store',
+    '06-knowledge/.hidden/a.md',
+    '06-knowledge/.a.md.icloud',
+    '02-inbox/secrets/creds.md',
+    'plugins/x/main.ts',
+    '.obsidian/app.json',
+  ]) {
+    it(`skips ${path}`, () => assert.equal(isScanned(path), false));
+  }
+
+  it('agrees with the disk walk on a vault holding every kind of path', () => {
+    const files = [
+      '06-knowledge/a.md',
+      '06-knowledge/.DS_Store',
+      '06-knowledge/.hidden/b.md',
+      '02-inbox/secrets/creds.md',
+      '02-inbox/thought.md',
+      '03-initiatives/deck/plan.png',
+      'README.md',
+    ];
+    const dir = makeVault(Object.fromEntries(files.map((f) => [f, 'x'])));
+    const { notes, assets } = walkVault(dir);
+    assert.deepEqual([...notes, ...assets].sort(), files.filter((f) => isScanned(f)).sort());
   });
 });
 

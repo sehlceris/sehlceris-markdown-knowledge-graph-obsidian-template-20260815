@@ -9,11 +9,14 @@
   "scripts": {
     "kg": "node scripts/kg.ts",
     "check": "node scripts/kg.ts check",
-    "test": "node --test \"scripts/**/*.test.ts\"",
-    "typecheck": "tsc -p scripts"
+    "test": "node --test \"scripts/**/*.test.ts\" \"plugins/**/*.test.ts\"",
+    "typecheck": "tsc -p scripts && tsc -p plugins/sehlceris-markdown-knowledge-graph",
+    "plugin:build": "node plugins/sehlceris-markdown-knowledge-graph/build.ts"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "esbuild": "^0.28.2",
+    "obsidian": "^1.14.4",
     "typescript": "~6.0.3"
   }
 }
