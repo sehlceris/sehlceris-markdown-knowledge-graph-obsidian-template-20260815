@@ -1,0 +1,23 @@
+# Normalize to LF in the repo. Obsidian on macOS/iOS writes LF anyway; this
+# keeps a stray CRLF from a Windows or web editor out of the object store.
+* text=auto eol=lf
+
+# Markdown is the payload — diff it as prose so `git diff --word-diff` and
+# blame stay readable on long wrapped paragraphs.
+*.md   text diff=markdown
+*.canvas text
+*.json text
+
+# Attachments: byte-for-byte, no diffing, no EOL munging.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.svg  binary
+*.pdf  binary
+*.mp3  binary
+*.m4a  binary
+*.mp4  binary
+*.mov  binary
+*.excalidraw binary

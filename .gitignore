@@ -1,0 +1,14 @@
+# Obsidian: per-machine state
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+.obsidian/plugins/*/data.json.bak
+.trash/
+
+# iCloud placeholders and sync-conflict duplicates — never notes
+*.icloud
+*conflicted copy*
+
+.DS_Store
+.claude/settings.local.json
+CLAUDE.local.md

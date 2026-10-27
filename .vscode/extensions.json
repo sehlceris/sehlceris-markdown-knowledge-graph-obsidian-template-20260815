@@ -1,0 +1,4 @@
+{
+  // Foam: wikilink autocomplete, backlinks, and rename/move that rewrite inbound links.
+  "recommendations": ["foam.foam-vscode", "yzhang.markdown-all-in-one"]
+}
