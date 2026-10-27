@@ -68,7 +68,10 @@ The vault ships a small plugin, already built into `.obsidian/plugins/` and enab
 (long-press on a phone) a note or folder for **Archive** or **Unarchive**, or run
 _Archive current note_ from the command palette. It runs the CLI's own archive plan — the
 `08-archive/` mirror, `updated` bumped, `status: done` where a status exists, links kept
-resolving — and works on desktop and mobile. Obsidian asks you to turn off Restricted mode
+resolving — and works on desktop and mobile. A folder archives into its mirror even when
+part of it was archived before; the files merge, and a file landing on a file is refused.
+It reads the buckets off the vault's own numbered folders, so it also works in a vault whose
+buckets are named differently (`06-misc-knowledge`). Obsidian asks you to turn off Restricted mode
 once per device before it loads any plugin. Source is in `plugins/`; `npm install` then
 `npm run plugin:build` rebuilds it.
 

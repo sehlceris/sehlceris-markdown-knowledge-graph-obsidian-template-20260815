@@ -6,6 +6,7 @@ import { describe, it } from 'node:test';
 import {
   archivePathFor,
   bucketOf,
+  configFromFolders,
   DEFAULT_CONFIG,
   entryOf,
   isArchived,
@@ -125,6 +126,34 @@ describe('isInBuckets', () => {
   it('knows only the current buckets', () => {
     assert.equal(isInBuckets('99-deleted/x.md'), false);
     assert.equal(isInBuckets('06-misc-knowledge/x.md'), false);
+  });
+});
+
+describe('configFromFolders', () => {
+  it("reads this template's folders back as exactly the default config", () => {
+    const folders = ['01-daily', '02-inbox', '03-initiatives', '04-areas', '05-entities', '06-knowledge',
+      '07-references', '08-archive', 'templates', 'plugins', 'scripts', 'node_modules'];
+    assert.deepEqual(configFromFolders(folders), DEFAULT_CONFIG);
+  });
+
+  it('takes the buckets a vault named its own way, and ignores unnumbered machinery', () => {
+    const config = configFromFolders(['08-archive', '01-daily', '02-inbox', '03-initiatives', '04-areas', '05-entities',
+      '06-misc-knowledge', '07-misc-references', '99-deleted', 'scripts', 'spec', 'templates', 'tmp']);
+
+    assert.deepEqual(config.buckets, ['01-daily', '02-inbox', '03-initiatives', '04-areas', '05-entities',
+      '06-misc-knowledge', '07-misc-references', '08-archive', '99-deleted', 'templates']);
+    assert.equal(config.archiveBucket, '08-archive');
+    assert.deepEqual(config.statusBuckets, ['03-initiatives', '04-areas']);
+    assert.deepEqual(config.skipPrefixes, ['02-inbox/secrets/']);
+    assert.equal(archivePathFor('06-misc-knowledge/x.md', config), '08-archive/06-misc-knowledge/x.md');
+  });
+
+  it('finds a renumbered archive by its name', () => {
+    assert.equal(configFromFolders(['01-inbox', '09-archive']).archiveBucket, '09-archive');
+  });
+
+  it('falls back to the default in a vault with no numbered folders yet', () => {
+    assert.deepEqual(configFromFolders(['templates', 'notes']), DEFAULT_CONFIG);
   });
 });
 

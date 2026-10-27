@@ -47,6 +47,27 @@ export const DEFAULT_CONFIG: VaultConfig = {
   skipPrefixes: ['02-inbox/secrets/'],
 };
 
+/** The config a vault's own top-level folders imply: every `NN-name` folder is a bucket,
+ *  plus `templates/`, and the archive, status, daily and inbox buckets are found by name.
+ *  The Obsidian plugin runs in vaults whose buckets were named before this template's —
+ *  `06-misc-knowledge`, `99-deleted` — so it reads them off the vault instead of assuming
+ *  DEFAULT_CONFIG. A vault with no numbered folders yet gets the default. */
+export function configFromFolders(folders: string[]): VaultConfig {
+  const numbered = folders.filter((f) => /^\d+-./.test(f)).sort();
+  if (numbered.length === 0) return DEFAULT_CONFIG;
+  const named = (...names: string[]): string[] =>
+    numbered.filter((f) => names.includes(f.slice(f.indexOf('-') + 1)));
+  const machinery = [TEMPLATES, ...named('daily', 'inbox')];
+  return {
+    buckets: [...numbered, TEMPLATES],
+    archiveBucket: named('archive')[0] ?? ARCHIVE_BUCKET,
+    statusBuckets: named('initiatives', 'areas'),
+    unlinkedBuckets: machinery,
+    emptyTagBuckets: machinery,
+    skipPrefixes: named('inbox').map((b) => `${b}/secrets/`),
+  };
+}
+
 // ─── Paths ───────────────────────────────────────────────────────────────────
 
 /** Windows separators and a leading "./" normalize away, as does a trailing slash —

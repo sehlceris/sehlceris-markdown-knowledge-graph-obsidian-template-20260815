@@ -46,6 +46,16 @@ export interface MovePlan {
   frontmatter: FrontmatterEdit[];
   /** Reasons the plan cannot be applied. Non-empty means refused, and promises nothing. */
   conflicts: string[];
+  /** The destination directory already exists and the files join what is in it. */
+  merge: boolean;
+}
+
+export interface MoveOptions {
+  /** Let a directory land on an existing directory, file by file, refusing only where a
+   *  file would land on a file. Archiving wants it: `08-archive/03-initiatives/house-elm/`
+   *  may already hold the half archived last spring. A plain move does not, because a
+   *  move onto `06-knowledge` would empty a folder into the bucket root. */
+  merge?: boolean;
 }
 
 /** Every file the move touches: one for a file, every entry underneath for a directory. */
@@ -63,22 +73,28 @@ export function planMove(
   vault: Vault,
   from: string,
   to: string,
-  frontmatter: FrontmatterEdit[] = []
+  frontmatter: FrontmatterEdit[] = [],
+  opts: MoveOptions = {}
 ): MovePlan {
   const src = normalizeVaultPath(from);
   const dest = normalizeVaultPath(to);
-  const conflicts = refusals(vault, src, dest);
+  const merge = opts.merge === true && isDirectory(vault, src) && vault.occupied(dest, src);
+  const conflicts = refusals(vault, src, dest, merge);
   if (conflicts.length) return refusedPlan(src, dest, conflicts);
 
   const files = movedFiles(vault, src, dest);
-  return { from: src, to: dest, files, edits: computeEdits(vault, files), frontmatter, conflicts };
+  return { from: src, to: dest, files, edits: computeEdits(vault, files), frontmatter, conflicts, merge };
 }
 
 export function refusedPlan(from: string, to: string, conflicts: string[]): MovePlan {
-  return { from, to, files: [], edits: [], frontmatter: [], conflicts };
+  return { from, to, files: [], edits: [], frontmatter: [], conflicts, merge: false };
 }
 
-function refusals(vault: Vault, from: string, to: string): string[] {
+/** Not an indexed file, but the parent of some. */
+const isDirectory = (vault: Vault, path: string): boolean =>
+  !vault.byPath.has(path) && vault.entries.some((e) => e.path.startsWith(`${path}/`));
+
+function refusals(vault: Vault, from: string, to: string, merge: boolean): string[] {
   if (!from || !to) return ['a source and a destination are both required'];
   if (from === to) return [`source and destination are the same: ${from}`];
 
@@ -87,7 +103,16 @@ function refusals(vault: Vault, from: string, to: string): string[] {
   if (!isInBuckets(to, vault.config)) out.push(`destination is outside the vault buckets: ${to}`);
   if (movedFiles(vault, from, to).length === 0) out.push(`no such note or directory: ${from}`);
   if (to.startsWith(`${from}/`)) out.push(`destination is inside the source: ${to}`);
-  if (vault.occupied(to, from)) out.push(`destination already exists: ${to}`);
+  if (!merge) {
+    if (vault.occupied(to, from)) out.push(`destination already exists: ${to}`);
+  } else if (vault.byPath.has(to)) {
+    out.push(`destination is a file, not a folder to merge into: ${to}`);
+  } else {
+    // Every collision at once, so one look at the refusal shows all that needs sorting.
+    for (const file of movedFiles(vault, from, to)) {
+      if (vault.occupied(file.to, file.from)) out.push(`destination already exists: ${file.to}`);
+    }
+  }
   return out;
 }
 
@@ -176,6 +201,7 @@ export function describeMove(plan: MovePlan, opts: { verb: string; dryRun: boole
   const verb = opts.dryRun ? `would ${opts.verb}` : `${opts.verb}d`;
   const notes = new Set(plan.edits.map((e) => e.path)).size;
   const detail = [
+    plan.merge ? `merged into the existing ${plan.to}/` : null,
     plan.files.length === 1 ? null : count(plan.files.length, 'file'),
     plan.edits.length === 0
       ? 'no links needed rewriting'

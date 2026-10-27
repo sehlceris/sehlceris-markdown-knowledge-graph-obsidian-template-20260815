@@ -440,6 +440,13 @@ describe('planMove — refusals', () => {
     ['the destination escapes the vault', { '06-knowledge/note.md': 'x\n' }, '06-knowledge/note.md', '../note.md'],
     ['from and to are the same', { '06-knowledge/note.md': 'x\n' }, '06-knowledge/note.md', '06-knowledge/note.md'],
     [
+      // Only archiving merges: a move onto 06-knowledge would empty the folder into the bucket.
+      'a directory lands on an existing directory',
+      { '03-initiatives/a/x.md': 'x\n', '06-knowledge/y.md': 'y\n' },
+      '03-initiatives/a',
+      '06-knowledge',
+    ],
+    [
       // `mv` errors here; moving a directory into itself is not a thing that can finish.
       'the destination is inside the source',
       { '03-initiatives/a/x.md': 'x\n', '03-initiatives/a/y.md': 'y\n' },

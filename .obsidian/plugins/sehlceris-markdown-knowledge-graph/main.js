@@ -153,6 +153,21 @@ var DEFAULT_CONFIG = {
   emptyTagBuckets: [TEMPLATES, "01-daily", "02-inbox"],
   skipPrefixes: ["02-inbox/secrets/"]
 };
+function configFromFolders(folders) {
+  var _a;
+  const numbered = folders.filter((f) => /^\d+-./.test(f)).sort();
+  if (numbered.length === 0) return DEFAULT_CONFIG;
+  const named = (...names) => numbered.filter((f) => names.includes(f.slice(f.indexOf("-") + 1)));
+  const machinery = [TEMPLATES, ...named("daily", "inbox")];
+  return {
+    buckets: [...numbered, TEMPLATES],
+    archiveBucket: (_a = named("archive")[0]) != null ? _a : ARCHIVE_BUCKET,
+    statusBuckets: named("initiatives", "areas"),
+    unlinkedBuckets: machinery,
+    emptyTagBuckets: machinery,
+    skipPrefixes: named("inbox").map((b) => `${b}/secrets/`)
+  };
+}
 function normalizeVaultPath(path) {
   return path.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
 }
@@ -379,18 +394,20 @@ function movedFiles(vault, from, to) {
   const prefix = `${src}/`;
   return vault.entries.filter((e) => e.path.startsWith(prefix)).map((e) => ({ from: e.path, to: `${dest}/${e.path.slice(prefix.length)}` }));
 }
-function planMove(vault, from, to, frontmatter = []) {
+function planMove(vault, from, to, frontmatter = [], opts = {}) {
   const src = normalizeVaultPath(from);
   const dest = normalizeVaultPath(to);
-  const conflicts = refusals(vault, src, dest);
+  const merge = opts.merge === true && isDirectory(vault, src) && vault.occupied(dest, src);
+  const conflicts = refusals(vault, src, dest, merge);
   if (conflicts.length) return refusedPlan(src, dest, conflicts);
   const files = movedFiles(vault, src, dest);
-  return { from: src, to: dest, files, edits: computeEdits(vault, files), frontmatter, conflicts };
+  return { from: src, to: dest, files, edits: computeEdits(vault, files), frontmatter, conflicts, merge };
 }
 function refusedPlan(from, to, conflicts) {
-  return { from, to, files: [], edits: [], frontmatter: [], conflicts };
+  return { from, to, files: [], edits: [], frontmatter: [], conflicts, merge: false };
 }
-function refusals(vault, from, to) {
+var isDirectory = (vault, path) => !vault.byPath.has(path) && vault.entries.some((e) => e.path.startsWith(`${path}/`));
+function refusals(vault, from, to, merge) {
   if (!from || !to) return ["a source and a destination are both required"];
   if (from === to) return [`source and destination are the same: ${from}`];
   const out = [];
@@ -398,7 +415,15 @@ function refusals(vault, from, to) {
   if (!isInBuckets(to, vault.config)) out.push(`destination is outside the vault buckets: ${to}`);
   if (movedFiles(vault, from, to).length === 0) out.push(`no such note or directory: ${from}`);
   if (to.startsWith(`${from}/`)) out.push(`destination is inside the source: ${to}`);
-  if (vault.occupied(to, from)) out.push(`destination already exists: ${to}`);
+  if (!merge) {
+    if (vault.occupied(to, from)) out.push(`destination already exists: ${to}`);
+  } else if (vault.byPath.has(to)) {
+    out.push(`destination is a file, not a folder to merge into: ${to}`);
+  } else {
+    for (const file of movedFiles(vault, from, to)) {
+      if (vault.occupied(file.to, file.from)) out.push(`destination already exists: ${file.to}`);
+    }
+  }
   return out;
 }
 function computeEdits(vault, files) {
@@ -463,6 +488,7 @@ function describeMove(plan, opts) {
   const verb = opts.dryRun ? `would ${opts.verb}` : `${opts.verb}d`;
   const notes = new Set(plan.edits.map((e) => e.path)).size;
   const detail = [
+    plan.merge ? `merged into the existing ${plan.to}/` : null,
     plan.files.length === 1 ? null : count(plan.files.length, "file"),
     plan.edits.length === 0 ? "no links needed rewriting" : `${opts.dryRun ? "would rewrite" : "rewrote"} ${count(plan.edits.length, "link")} in ${count(notes, "note")}`
   ].filter((s) => s !== null);
@@ -480,7 +506,7 @@ function planArchive(vault, path, opts = {}) {
   if (isArchived(from, vault.config)) return refusedPlan(from, from, [`already archived: ${from}`]);
   if (isBucketRoot(vault, from)) return refusedPlan(from, from, [`a bucket is not archived whole: ${from}`]);
   const to = archivePathFor(from, vault.config);
-  return planMove(vault, from, to, bumps(vault, from, to, opts, true));
+  return planMove(vault, from, to, bumps(vault, from, to, opts, true), { merge: true });
 }
 function planUnarchive(vault, path, opts = {}) {
   const from = normalizeVaultPath(path);
@@ -489,7 +515,7 @@ function planUnarchive(vault, path, opts = {}) {
     return refusedPlan(from, from, [`a bucket is not unarchived whole: ${from}`]);
   }
   const to = unarchivePathFor(from, vault.config);
-  return planMove(vault, from, to, bumps(vault, from, to, opts, false));
+  return planMove(vault, from, to, bumps(vault, from, to, opts, false), { merge: true });
 }
 function bumps(vault, from, to, opts, setStatus) {
   var _a, _b;
@@ -528,7 +554,10 @@ function planFor(verb, vault, path, opts = {}) {
 async function applyPlan(vault, plan, io) {
   const result = { ok: true, edited: [], moved: [], frontmatter: [], removedDirs: [], errors: [] };
   if (plan.conflicts.length) return { ...result, ok: false, errors: [...plan.conflicts] };
-  if (await io.exists(plan.to)) return { ...result, ok: false, errors: [`destination already exists: ${plan.to}`] };
+  const targets = plan.merge ? plan.files.map((f) => f.to) : [plan.to];
+  const taken = [];
+  for (const target of targets) if (await io.exists(target)) taken.push(`destination already exists: ${target}`);
+  if (taken.length) return { ...result, ok: false, errors: taken };
   const writes = renderMove(vault, plan);
   const sources = /* @__PURE__ */ new Set([...writes.links.map((w) => w.path), ...writes.frontmatter.map((w) => sourceOf(plan, w.path))]);
   for (const path of sources) {
@@ -631,13 +660,13 @@ function halted(result, plan, err) {
 var import_obsidian = require("obsidian");
 
 // plugins/sehlceris-markdown-knowledge-graph/src/indexed-vault.ts
-function indexedVault({ files, contents, taken }) {
+function indexedVault({ files, contents, taken, config = DEFAULT_CONFIG }) {
   const occupied = new Set([...taken].map((p) => p.toLowerCase()));
   return {
-    config: DEFAULT_CONFIG,
+    config,
     vocabulary: null,
     vocabularyError: "the plugin does not load the tag vocabulary",
-    ...indexEntries(files),
+    ...indexEntries(files, config),
     read(path) {
       const text = contents.get(path);
       if (text === void 0) throw new Error(`not read into the index: ${path}`);
@@ -649,14 +678,19 @@ function indexedVault({ files, contents, taken }) {
 }
 
 // plugins/sehlceris-markdown-knowledge-graph/src/obsidian-vault.ts
+function vaultConfig(app) {
+  return configFromFolders(app.vault.getRoot().children.filter((f) => f instanceof import_obsidian.TFolder).map((f) => f.name));
+}
 async function loadVault(app) {
+  const config = vaultConfig(app);
   const files = app.vault.getFiles();
-  const notes = files.filter((f) => f.path.endsWith(".md") && isScanned(f.path));
+  const notes = files.filter((f) => f.path.endsWith(".md") && isScanned(f.path, config));
   const contents = new Map(await Promise.all(notes.map(async (f) => [f.path, await app.vault.cachedRead(f)])));
   return indexedVault({
     files: files.map((f) => f.path),
     contents,
-    taken: app.vault.getAllLoadedFiles().map((f) => f.path)
+    taken: app.vault.getAllLoadedFiles().map((f) => f.path),
+    config
   });
 }
 function obsidianIO(app) {
@@ -708,7 +742,7 @@ var KnowledgeGraphPlugin = class extends import_obsidian2.Plugin {
         name: `${LABEL[verb]} current note`,
         checkCallback: (checking) => {
           const file = this.app.workspace.getActiveFile();
-          if (!file || verbFor([file.path]) !== verb) return false;
+          if (!file || verbFor([file.path], vaultConfig(this.app)) !== verb) return false;
           if (!checking) void this.run(verb, [file]);
           return true;
         }
@@ -716,7 +750,10 @@ var KnowledgeGraphPlugin = class extends import_obsidian2.Plugin {
     }
   }
   addMenuItem(menu, files) {
-    const verb = verbFor(files.map((f) => f.path));
+    const verb = verbFor(
+      files.map((f) => f.path),
+      vaultConfig(this.app)
+    );
     if (!verb) return;
     menu.addItem(
       (item) => item.setTitle(LABEL[verb]).setIcon(ICON[verb]).setSection("action").onClick(() => void this.run(verb, files))

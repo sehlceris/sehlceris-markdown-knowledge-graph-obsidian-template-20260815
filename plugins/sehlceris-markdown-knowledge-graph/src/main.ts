@@ -6,7 +6,7 @@
 import { type App, type Menu, Modal, Notice, Plugin, Setting, type TAbstractFile, TFolder } from 'obsidian';
 
 import { archivePaths, preview, type Verb, verbFor } from './apply.ts';
-import { loadVault, obsidianIO } from './obsidian-vault.ts';
+import { loadVault, obsidianIO, vaultConfig } from './obsidian-vault.ts';
 
 const LABEL: Record<Verb, string> = { archive: 'Archive', unarchive: 'Unarchive' };
 const ICON: Record<Verb, string> = { archive: 'archive', unarchive: 'archive-restore' };
@@ -25,7 +25,7 @@ export default class KnowledgeGraphPlugin extends Plugin {
         name: `${LABEL[verb]} current note`,
         checkCallback: (checking) => {
           const file = this.app.workspace.getActiveFile();
-          if (!file || verbFor([file.path]) !== verb) return false;
+          if (!file || verbFor([file.path], vaultConfig(this.app)) !== verb) return false;
           if (!checking) void this.run(verb, [file]);
           return true;
         },
@@ -34,7 +34,10 @@ export default class KnowledgeGraphPlugin extends Plugin {
   }
 
   private addMenuItem(menu: Menu, files: TAbstractFile[]): void {
-    const verb = verbFor(files.map((f) => f.path));
+    const verb = verbFor(
+      files.map((f) => f.path),
+      vaultConfig(this.app)
+    );
     if (!verb) return;
     menu.addItem((item) =>
       item

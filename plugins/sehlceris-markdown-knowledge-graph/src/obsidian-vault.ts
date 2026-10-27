@@ -4,20 +4,26 @@
 
 import { type App, TFile, TFolder } from 'obsidian';
 
-import { isScanned } from '../../../scripts/lib/vault.ts';
-import type { Vault } from '../../../scripts/lib/vault.ts';
+import { configFromFolders, isScanned, type Vault, type VaultConfig } from '../../../scripts/lib/vault.ts';
 import type { VaultIO } from './apply.ts';
 import { indexedVault } from './indexed-vault.ts';
 
+/** This vault's buckets, read off its top-level folders. Cheap: one list of the root. */
+export function vaultConfig(app: App): VaultConfig {
+  return configFromFolders(app.vault.getRoot().children.filter((f) => f instanceof TFolder).map((f) => f.name));
+}
+
 /** Reads every scanned note, because a move can break a bare link in any of them. */
 export async function loadVault(app: App): Promise<Vault> {
+  const config = vaultConfig(app);
   const files = app.vault.getFiles();
-  const notes = files.filter((f) => f.path.endsWith('.md') && isScanned(f.path));
+  const notes = files.filter((f) => f.path.endsWith('.md') && isScanned(f.path, config));
   const contents = new Map(await Promise.all(notes.map(async (f) => [f.path, await app.vault.cachedRead(f)] as const)));
   return indexedVault({
     files: files.map((f) => f.path),
     contents,
     taken: app.vault.getAllLoadedFiles().map((f) => f.path),
+    config,
   });
 }
 

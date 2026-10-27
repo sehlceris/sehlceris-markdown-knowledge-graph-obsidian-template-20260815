@@ -187,6 +187,85 @@ describe('planArchive', () => {
     assert.deepEqual(snapshot(dir), before);
   });
 
+  it('merges a folder into the part of it archived before, touching nothing already there', () => {
+    const earlier = initiative('done');
+    const dir = makeVault({
+      '03-initiatives/house-elm/drip.md': initiative('active'),
+      '03-initiatives/house-elm/plans/drip-layout.png': 'png',
+      '08-archive/03-initiatives/house-elm/deck.md': earlier,
+      '08-archive/03-initiatives/house-elm/plans/deck-layout.png': 'old png',
+      '05-entities/marco.md': 'Fixing [[drip]].\n',
+      '06-knowledge/cone-6-firing-schedule.md': knowledge,
+    });
+
+    const { plan, applied } = archive(dir, '03-initiatives/house-elm');
+
+    assert.deepEqual(plan.conflicts, []);
+    assert.equal(plan.merge, true);
+    assert.equal(applied.ok, true);
+    assert.deepEqual(Object.keys(snapshot(dir)).filter((p) => p.startsWith('08-archive/')).sort(), [
+      '08-archive/03-initiatives/house-elm/deck.md',
+      '08-archive/03-initiatives/house-elm/drip.md',
+      '08-archive/03-initiatives/house-elm/plans/deck-layout.png',
+      '08-archive/03-initiatives/house-elm/plans/drip-layout.png',
+    ]);
+    assert.equal(read(dir, '08-archive/03-initiatives/house-elm/deck.md'), earlier);
+    assert.match(read(dir, '08-archive/03-initiatives/house-elm/drip.md'), /status: done/);
+    assert.deepEqual(plan.frontmatter.map((f) => f.path), [
+      '08-archive/03-initiatives/house-elm/drip.md',
+      '08-archive/03-initiatives/house-elm/drip.md',
+    ]);
+    assert.equal(existsSync(join(dir, '03-initiatives/house-elm')), false);
+    assert.deepEqual(buildLinkGraph(loadVault(dir)).broken, []);
+  });
+
+  it('refuses a merge where any file would land on a file, naming every one, and touches nothing', () => {
+    const dir = makeVault({
+      '03-initiatives/house-elm/drip.md': initiative('active'),
+      '03-initiatives/house-elm/plans/layout.png': 'new',
+      '03-initiatives/house-elm/fence.md': initiative('active'),
+      '08-archive/03-initiatives/house-elm/drip.md': initiative('done'),
+      '08-archive/03-initiatives/house-elm/plans/layout.png': 'old',
+    });
+    const before = snapshot(dir);
+
+    const { plan, applied } = archive(dir, '03-initiatives/house-elm');
+
+    assert.deepEqual(plan.conflicts, [
+      'destination already exists: 08-archive/03-initiatives/house-elm/drip.md',
+      'destination already exists: 08-archive/03-initiatives/house-elm/plans/layout.png',
+    ]);
+    assert.equal(applied.ok, false);
+    assert.deepEqual(snapshot(dir), before);
+  });
+
+  it('refuses a merge onto a file standing where the folder would be', () => {
+    const dir = makeVault({
+      '03-initiatives/house-elm/drip.md': initiative('active'),
+      '08-archive/03-initiatives/house-elm': 'a file',
+    });
+    const before = snapshot(dir);
+
+    const { plan, applied } = archive(dir, '03-initiatives/house-elm');
+
+    assert.deepEqual(plan.conflicts, [
+      'destination is a file, not a folder to merge into: 08-archive/03-initiatives/house-elm',
+    ]);
+    assert.equal(applied.ok, false);
+    assert.deepEqual(snapshot(dir), before);
+  });
+
+  it('says it merged', () => {
+    const dir = makeVault({
+      '03-initiatives/house-elm/drip.md': initiative('active'),
+      '08-archive/03-initiatives/house-elm/deck.md': initiative('done'),
+    });
+
+    const result = archiveAll(dir, ['03-initiatives/house-elm'], { dryRun: true, today: TODAY });
+
+    assert.match(result.human.join('\n'), /\(merged into the existing 08-archive\/03-initiatives\/house-elm\/,/);
+  });
+
   // With no 08-archive/03-initiatives/ yet, nothing else stands in the way of moving the
   // whole bucket.
   for (const path of ['03-initiatives', '03-initiatives/', '08-archive']) {
@@ -223,6 +302,20 @@ describe('planUnarchive', () => {
     assert.deepEqual(plan.conflicts, ['not archived: 03-initiatives/deck-rebuild.md']);
     assert.equal(applied.ok, false);
     assert.deepEqual(snapshot(dir), before);
+  });
+
+  it('merges back into a live folder that has grown since', () => {
+    const dir = makeVault({
+      '08-archive/03-initiatives/house-elm/deck.md': initiative('done'),
+      '03-initiatives/house-elm/fence.md': initiative('active'),
+    });
+
+    const { plan, applied } = unarchive(dir, '08-archive/03-initiatives/house-elm');
+
+    assert.equal(plan.merge, true);
+    assert.equal(applied.ok, true);
+    assert.equal(existsSync(join(dir, '03-initiatives/house-elm/deck.md')), true);
+    assert.equal(read(dir, '03-initiatives/house-elm/fence.md'), initiative('active'));
   });
 
   it('refuses to unarchive a whole archived bucket, and touches nothing', () => {

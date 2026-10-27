@@ -312,6 +312,8 @@ folder, archiving a folder, or draining a day.
 `archive.ts` moves the file or folder to `08-archive/<same-bucket>/`, creating directories
 as needed, bumps `updated`, and sets `status: done` where the bucket carries a status. It
 never adds a `status` key to a note that had none. A bucket itself is never archived whole.
+A folder whose mirror already exists merges into it; only a file landing on an existing
+file is refused, and the refusal lists every collision.
 User can do the same from Obsidian — Archive / Unarchive in the file menu runs the same
 plan — so a note found already in `08-archive/` with a fresh `updated` got there properly.
 

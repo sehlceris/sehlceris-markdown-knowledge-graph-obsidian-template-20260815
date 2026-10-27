@@ -6,7 +6,7 @@ import { describe, it } from 'node:test';
 
 import { planArchive, planUnarchive } from '../../../scripts/lib/archive.ts';
 import { archiveAll } from '../../../scripts/lib/archive-fs.ts';
-import { isScanned } from '../../../scripts/lib/vault.ts';
+import { configFromFolders, isScanned, type VaultConfig } from '../../../scripts/lib/vault.ts';
 import { loadVault as loadDiskVault } from '../../../scripts/lib/vault-fs.ts';
 import { makeVault, snapshot } from '../../../scripts/tests/helpers.ts';
 import { applyPlan, archivePaths, preview, verbFor, type VaultIO } from './apply.ts';
@@ -21,8 +21,10 @@ class MemoryIO implements VaultIO {
   readonly folders = new Set<string>();
   readonly hidden = new Set<string>();
   failRename: string | null = null;
+  readonly config: VaultConfig | undefined;
 
-  constructor(files: Record<string, string>) {
+  constructor(files: Record<string, string>, config?: VaultConfig) {
+    this.config = config;
     this.files = new Map(Object.entries(files));
     for (const path of this.files.keys()) {
       for (let i = path.indexOf('/'); i !== -1; i = path.indexOf('/', i + 1)) this.folders.add(path.slice(0, i));
@@ -64,8 +66,13 @@ class MemoryIO implements VaultIO {
 
   /** What loadVault in obsidian-vault.ts builds from the app's index. */
   async load() {
-    const notes = [...this.files].filter(([p]) => p.endsWith('.md') && isScanned(p));
-    return indexedVault({ files: this.files.keys(), contents: new Map(notes), taken: [...this.files.keys(), ...this.folders] });
+    const notes = [...this.files].filter(([p]) => p.endsWith('.md') && isScanned(p, this.config));
+    return indexedVault({
+      files: this.files.keys(),
+      contents: new Map(notes),
+      taken: [...this.files.keys(), ...this.folders],
+      config: this.config,
+    });
   }
 }
 
@@ -79,6 +86,8 @@ const FIXTURE = {
   '03-initiatives/house-elm/plan.png': 'png',
   '06-knowledge/cone-6.md': knowledge,
   '08-archive/04-areas/garden.md': initiative('done'),
+  '03-initiatives/fence/posts.md': initiative('active'),
+  '08-archive/03-initiatives/fence/gate.md': initiative('done'),
   '02-inbox/secrets/creds.md': 'hunter2',
 };
 
@@ -90,6 +99,7 @@ describe('parity with the CLI', () => {
   for (const [verb, path] of [
     ['archive', '03-initiatives/deck.md'],
     ['archive', '03-initiatives/house-elm'],
+    ['archive', '03-initiatives/fence'],
     ['unarchive', '08-archive/04-areas/garden.md'],
   ] as const) {
     it(`${verb} ${path}: the same plan from the app's index as from disk`, async () => {
@@ -164,6 +174,21 @@ describe('applyPlan', () => {
     assert.deepEqual(io.files, before);
   });
 
+  it('refuses a merge where a file exists on disk but not in the index', async () => {
+    const io = new MemoryIO({
+      '03-initiatives/fence/posts.md': initiative('active'),
+      '08-archive/03-initiatives/fence/gate.md': initiative('done'),
+    });
+    io.hidden.add('08-archive/03-initiatives/fence/posts.md');
+    const vault = await io.load();
+    const before = new Map(io.files);
+
+    const applied = await applyPlan(vault, planArchive(vault, '03-initiatives/fence'), io);
+
+    assert.deepEqual(applied.errors, ['destination already exists: 08-archive/03-initiatives/fence/posts.md']);
+    assert.deepEqual(io.files, before);
+  });
+
   it('refuses a destination the index holds in another case', async () => {
     const io = new MemoryIO({ '06-knowledge/cone-6.md': knowledge, '08-archive/06-knowledge/Cone-6.md': knowledge });
     const vault = await io.load();
@@ -189,6 +214,25 @@ describe('applyPlan', () => {
       'files were already moved: 03-initiatives/house-elm/a.md -> 08-archive/03-initiatives/house-elm/a.md',
       '1 of 2 files are already at the destination; finish the rest by hand',
     ]);
+  });
+});
+
+describe('a vault with its own bucket names', () => {
+  const config = configFromFolders(['01-daily', '03-initiatives', '06-misc-knowledge', '08-archive', '99-deleted']);
+
+  it('offers and archives a note in a bucket the default config has never heard of', async () => {
+    const io = new MemoryIO({ '06-misc-knowledge/cone-6.md': knowledge, '03-initiatives/deck.md': initiative('active') }, config);
+
+    assert.equal(verbFor(['06-misc-knowledge/cone-6.md'], config), 'archive');
+    const result = await archivePaths('archive', ['06-misc-knowledge/cone-6.md'], () => io.load(), io, { today: TODAY });
+
+    assert.equal(result.ok, true, result.lines.join('\n'));
+    assert.equal(io.files.get('08-archive/06-misc-knowledge/cone-6.md'), knowledge.replace('2026-02-02', '2026-08-15'));
+  });
+
+  it("indexes that bucket's notes, so their links count when planning", async () => {
+    const io = new MemoryIO({ '06-misc-knowledge/cone-6.md': knowledge }, config);
+    assert.deepEqual((await io.load()).notes.map((n) => n.path), ['06-misc-knowledge/cone-6.md']);
   });
 });
 

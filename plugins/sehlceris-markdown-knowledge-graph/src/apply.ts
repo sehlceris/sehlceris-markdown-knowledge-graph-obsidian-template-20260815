@@ -59,7 +59,11 @@ export async function applyPlan(vault: Vault, plan: MovePlan, io: VaultIO): Prom
   if (plan.conflicts.length) return { ...result, ok: false, errors: [...plan.conflicts] };
 
   // The index can miss what is on disk — a file still arriving from iCloud, a hidden one.
-  if (await io.exists(plan.to)) return { ...result, ok: false, errors: [`destination already exists: ${plan.to}`] };
+  // A merge expects its folder to exist, so each file's landing spot is checked instead.
+  const targets = plan.merge ? plan.files.map((f) => f.to) : [plan.to];
+  const taken: string[] = [];
+  for (const target of targets) if (await io.exists(target)) taken.push(`destination already exists: ${target}`);
+  if (taken.length) return { ...result, ok: false, errors: taken };
 
   const writes = renderMove(vault, plan);
   // Every file the writes were rendered from, read fresh before anything is written: a

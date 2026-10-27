@@ -3,6 +3,9 @@
 // move backwards and bumps `updated` only: nothing knows what the status was before, and
 // guessing `active` would be inventing a fact.
 //
+// A folder archives into its mirror even when the mirror already exists — the files merge
+// in, and only a file landing on a file is refused, listing every such collision.
+//
 // Planning only, and no Node: the CLI applies these plans through archive-fs.ts, the
 // Obsidian plugin through its own apply.
 
@@ -29,7 +32,7 @@ export function planArchive(vault: Vault, path: string, opts: ArchiveOptions = {
   if (isArchived(from, vault.config)) return refusedPlan(from, from, [`already archived: ${from}`]);
   if (isBucketRoot(vault, from)) return refusedPlan(from, from, [`a bucket is not archived whole: ${from}`]);
   const to = archivePathFor(from, vault.config);
-  return planMove(vault, from, to, bumps(vault, from, to, opts, true));
+  return planMove(vault, from, to, bumps(vault, from, to, opts, true), { merge: true });
 }
 
 export function planUnarchive(vault: Vault, path: string, opts: ArchiveOptions = {}): MovePlan {
@@ -39,7 +42,7 @@ export function planUnarchive(vault: Vault, path: string, opts: ArchiveOptions =
     return refusedPlan(from, from, [`a bucket is not unarchived whole: ${from}`]);
   }
   const to = unarchivePathFor(from, vault.config);
-  return planMove(vault, from, to, bumps(vault, from, to, opts, false));
+  return planMove(vault, from, to, bumps(vault, from, to, opts, false), { merge: true });
 }
 
 function bumps(vault: Vault, from: string, to: string, opts: ArchiveOptions, setStatus: boolean): FrontmatterEdit[] {
