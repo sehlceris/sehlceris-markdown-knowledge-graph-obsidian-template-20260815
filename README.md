@@ -43,8 +43,8 @@ tags:
 ---
 ```
 
-`tags` come from the vault's closed vocabulary in `tag-vocabulary.json` (empty to start —
-add domain tags as real areas appear). `status` runs `active`/`paused`/`done` on
+`tags` come from the vault's closed vocabulary in `tag-vocabulary.json`, which starts with
+a working set of domain tags — prune or extend it to fit. `status` runs `active`/`paused`/`done` on
 initiatives and areas only. References carry `source:`; entities carry `email`, `phone`,
 `url`.
 

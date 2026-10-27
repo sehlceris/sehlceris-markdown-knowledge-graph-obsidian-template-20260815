@@ -1,4 +1,20 @@
 {
-  "domainTags": [],
-  "shapeTags": []
+  "domainTags": [
+    "ai",
+    "computing",
+    "daily",
+    "food",
+    "health",
+    "homelab",
+    "local",
+    "people",
+    "pets",
+    "pev",
+    "records",
+    "travel",
+    "work"
+  ],
+  "shapeTags": [
+    "measurement"
+  ]
 }
