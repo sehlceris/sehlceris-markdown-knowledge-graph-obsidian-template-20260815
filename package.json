@@ -1,0 +1,19 @@
+{
+  "name": "knowledge-graph-vault",
+  "private": true,
+  "type": "module",
+  "description": "An Obsidian vault and the zero-dependency scripts that maintain it",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "kg": "node scripts/kg.ts",
+    "check": "node scripts/kg.ts check",
+    "test": "node --test \"scripts/**/*.test.ts\"",
+    "typecheck": "tsc -p scripts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "~6.0.3"
+  }
+}

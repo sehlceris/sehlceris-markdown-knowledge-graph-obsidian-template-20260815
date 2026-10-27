@@ -48,6 +48,20 @@ a working set of domain tags — prune or extend it to fit. `status` runs `activ
 initiatives and areas only. References carry `source:`; entities carry `email`, `phone`,
 `url`.
 
+## Maintenance scripts
+
+`scripts/` is a zero-dependency CLI that keeps the graph healthy — Node ≥22.18 runs the
+TypeScript directly. `node scripts/kg.ts` lists the commands:
+
+```
+node scripts/kg.ts check                      broken or ambiguous links, frontmatter drift, orphans
+node scripts/kg.ts move 02-inbox/x.md 06-knowledge/x.md   move without breaking a link
+node scripts/kg.ts archive 03-initiatives/deck            finished work -> 08-archive/
+node scripts/kg.ts tag add <tag>              register a new domain tag
+```
+
+`npm test` runs the suite.
+
 The `.obsidian/` config turns on daily notes (into `01-daily/` from
 `templates/daily-note.md`), templates, and link-updating on rename. In VS Code, Foam gives
 the same rename-safe wikilinks. Agents: see `AGENTS.md` and the `knowledge-graph` skill in

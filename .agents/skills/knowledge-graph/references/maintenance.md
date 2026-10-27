@@ -10,9 +10,9 @@ sweep that tidies a queue nobody asked it to touch destroys the queue's meaning.
 ## 1. Run the checkers
 
 ```bash
-kg check-frontmatter   # frontmatter shape, closed tag vocabulary
-kg check-links         # broken links, orphans, invented targets
-kg tag list            # live domain and shape policy
+node scripts/kg.ts check-frontmatter   # frontmatter shape, closed tag vocabulary
+node scripts/kg.ts check-links         # broken links, orphans, invented targets
+node scripts/kg.ts tag list            # live domain and shape policy
 ```
 
 Add `--base <dir>` to check a vault elsewhere, `--json` if you are going to parse the
@@ -32,13 +32,13 @@ yet is a judgement call, so it is reported to User rather than suppressed in the
 Report the list; do not close it unasked.
 
 A link to a note that does not exist is removed, not answered with a new note:
-`kg unlink-missing --dry-run`, review the plan, then run it without the flag. It
+`node scripts/kg.ts unlink-missing --dry-run`, review the plan, then run it without the flag. It
 replaces `[[target]]` and `[[target#heading]]` with `target`, `[[target|display]]` with
 `display`, and leaves code, ambiguous links and missing `![[embeds]]` (listed) alone.
 
 Tag sprawl is also handled here rather than by counting: the vault-owned vocabulary is
-closed, so a novel tag fails instead of accumulating. Inspect it with `kg tag list`.
-Reuse an existing semantic domain when it fits; register with `kg tag add <tag>` only
+closed, so a novel tag fails instead of accumulating. Inspect it with `node scripts/kg.ts tag list`.
+Reuse an existing semantic domain when it fits; register with `node scripts/kg.ts tag add <tag>` only
 for a genuine new ongoing area, never simply to clear a failure. Review `--dry-run` first,
 and use `--allow-near-duplicate` only for an intentionally distinct spelling.
 
@@ -75,7 +75,7 @@ drift — move it to `04-areas/<name>/<name>.md`.
 
 ```bash
 find 04-areas 08-archive/04-areas -maxdepth 1 -name '*.md'
-kg move 04-areas/pottery.md 04-areas/pottery/pottery.md
+node scripts/kg.ts move 04-areas/pottery.md 04-areas/pottery/pottery.md
 ```
 
 Use the CLI, not `mv`. The basename does not change here so no link needs rewriting,

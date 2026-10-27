@@ -205,15 +205,15 @@ tags:
 Tags are written as a YAML block sequence, one per line, because that is what Obsidian's
 Properties editor writes. An inline `[a, b]` array parses fine but gets rewritten the
 first time the property is touched in the app, so matching it now avoids the churn.
-`kg check-frontmatter` enforces this. The vault owns its closed lists in
-`tag-vocabulary.json`; inspect the live policy with `kg tag list` before choosing tags.
+`node scripts/kg.ts check-frontmatter` enforces this. The vault owns its closed lists in
+`tag-vocabulary.json`; inspect the live policy with `node scripts/kg.ts tag list` before choosing tags.
 
 Tags run on two axes: **domain tags** — the ongoing areas a note belongs to — plus **shape
 tags** for what kind of record it is. At least one domain, more when a note genuinely
 straddles two, and any shape tags that apply. Domains say what a note is about; shapes cut
 across domains on purpose. Both lists are closed and stay short — an open tag list is how
 a graph acquires forty tags and no way in. Reuse an existing domain whenever its meaning
-fits. Register a domain with `kg tag add <tag>` only when it represents a genuinely
+fits. Register a domain with `node scripts/kg.ts tag add <tag>` only when it represents a genuinely
 new ongoing area, never merely to silence an unknown-tag error. Shape meanings come from
 the live vocabulary and vault practice; do not assume a product-supplied literal.
 
@@ -239,7 +239,7 @@ Use absolute dates, never "today" or "last week".
 
 `kebab-case.md`, descriptive, no dates in the filename except for genuinely dated
 artifacts (meeting notes, journal entries). Check a generic-sounding name is free with
-`kg resolve` before creating it — see Linking below.
+`node scripts/kg.ts resolve` before creating it — see Linking below.
 
 Name entities by full name — `jane-okafor.md`, `acme-corp.md`. First names and bare
 brands collide with topic notes, and the collision is silent.
@@ -281,11 +281,11 @@ Embed attachments with `![[file.png]]`.
 Check a link lands before writing it, rather than after the checker fails:
 
 ```bash
-kg resolve jane-okafor      # what does [[jane-okafor]] point at?
-kg backlinks pottery.md     # what already points here?
+node scripts/kg.ts resolve jane-okafor      # what does [[jane-okafor]] point at?
+node scripts/kg.ts backlinks pottery.md     # what already points here?
 ```
 
-`kg resolve` exits non-zero if the target hits nothing or more than one note, so it also
+`node scripts/kg.ts resolve` exits non-zero if the target hits nothing or more than one note, so it also
 answers "is this filename already taken?" when you are about to create a note.
 
 ## Moving, renaming, archiving
@@ -293,14 +293,14 @@ answers "is this filename already taken?" when you are about to create a note.
 **Never `mv` a note, and never rename one by hand.** Use the CLI:
 
 ```bash
-kg move 02-inbox/thing.md 06-knowledge/thing.md
-kg rename 06-knowledge/mvcc.md why-mvcc-beats-locking
-kg move 03-initiatives/deck-rebuild.md 03-initiatives/deck-rebuild/
-kg archive 03-initiatives/deck-rebuild.md   # -> 08-archive/03-initiatives/
-kg unarchive 08-archive/01-daily/2026-08-15.md
+node scripts/kg.ts move 02-inbox/thing.md 06-knowledge/thing.md
+node scripts/kg.ts rename 06-knowledge/mvcc.md why-mvcc-beats-locking
+node scripts/kg.ts move 03-initiatives/deck-rebuild.md 03-initiatives/deck-rebuild/
+node scripts/kg.ts archive 03-initiatives/deck-rebuild.md   # -> 08-archive/03-initiatives/
+node scripts/kg.ts unarchive 08-archive/01-daily/2026-08-15.md
 ```
 
-`kg move` computes replacements against the vault's _post-move_ state and rewrites exactly
+`node scripts/kg.ts move` computes replacements against the vault's _post-move_ state and rewrites exactly
 the links that would otherwise break, preserving `|display text`, `#headings` and
 `^block-ids`. A move that changes no basename rewrites nothing — which is why changing
 bucket and archiving are both free, and why hand-rewriting links afterward is wasted work

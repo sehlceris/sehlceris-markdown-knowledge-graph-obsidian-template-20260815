@@ -1,4 +1,8 @@
 {
   "alwaysUpdateLinks": true,
-  "promptDelete": false
+  "promptDelete": false,
+  "userIgnoreFilters": [
+    "node_modules/",
+    "scripts/"
+  ]
 }

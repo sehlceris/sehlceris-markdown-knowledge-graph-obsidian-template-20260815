@@ -32,15 +32,46 @@ Always write the full folder name including the number — `06-knowledge/`, neve
 - **Wikilinks resolve by path suffix, not by folder.** `[[note]]` finds that note in any
   folder, so moving a note between buckets breaks nothing — but renaming one breaks every
   inbound link. Keep filenames unique across the vault so the bare form always works.
-- **Never `mv` a note.** Move and rename in Obsidian or Foam, which rewrite inbound links,
-  or with the `kg` CLI from the knowledge-graph tooling (`kg move --base <vault>`). The
-  `kg` commands the skill names come from that tooling; without it, use the editor.
+- **Never `mv` a note.** Renaming breaks every inbound link silently. Use
+  `node scripts/kg.ts move` / `rename` / `archive`, or Obsidian and Foam, which rewrite
+  inbound links the same way.
 - **Never run a note through a markdown or YAML serializer.** A round trip with no edit
   rewrites `---` to `***`, setext headings to ATX, list markers and indents. Edit in place.
 - **`*.icloud` files are empty placeholders**, not notes. Materialize first with
   `brctl download <path>`. Don't move or rename across the vault during a large iCloud sync.
 - **Stage by path, never `git add -A`**, if the vault is a git repo — Obsidian writes
   constantly, and a blanket stage sweeps up whatever User is mid-sentence on.
+
+## Commands
+
+`scripts/` holds the vault's maintenance CLI: TypeScript that Node ≥22.18 runs directly,
+with no install, no build and no dependencies. It treats the folder it sits in as the
+vault; `--base <dir>` points it elsewhere.
+
+```
+node scripts/kg.ts                         list every command
+node scripts/kg.ts check                   links + frontmatter; run after any batch of edits
+node scripts/kg.ts resolve <target>        what does [[target]] point at?
+node scripts/kg.ts backlinks <note>        what points at this note?
+node scripts/kg.ts links <note>            outgoing links, and how each resolves
+node scripts/kg.ts move <from> <to>        move a note or folder, maintaining inbound links
+node scripts/kg.ts rename <path> <name>    same directory, new basename
+node scripts/kg.ts archive <path...>       -> 08-archive/<same-bucket>/; unarchive reverses
+node scripts/kg.ts unlink-missing          replace links to missing notes with their text
+node scripts/kg.ts tag list | add <tag>    inspect or extend the closed tag vocabulary
+```
+
+Every command takes `--json`; mutating ones take `--dry-run`, which prints the plan without
+touching disk — use it first when a move looks large. A move rewrites a link only when
+leaving it alone would break it or make it ambiguous, so a move that changes no basename
+rewrites nothing.
+
+Layout: `scripts/lib/` is the vault logic and never prints or exits; `scripts/commands/`
+wraps it, one `Command` object each, registered in `commands/index.ts`; `scripts/cli.ts`
+parses flags and renders results. **Run `npm test` before committing a change to
+`scripts/`** — `node --test`, no install needed. A checker that cannot fail reports "ok",
+so a new check needs a passing case and a deliberately broken one. `npm install` then
+`npm run typecheck` type-checks; Obsidian is set to ignore `node_modules/` and `scripts/`.
 
 ## Conventions
 
