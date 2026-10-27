@@ -22,6 +22,7 @@ rolodex is only as good as its backlinks.
 07-references/   raw material captured from outside, largely as-is
 08-archive/      mirrors the live buckets, using the same numbered names
 templates/       reusable note skeletons, one per repeated form
+plugins/         source of the vault's Obsidian plugin; not notes
 ```
 
 Always write the full folder name including the number — `06-knowledge/`, never
@@ -34,7 +35,8 @@ Always write the full folder name including the number — `06-knowledge/`, neve
   inbound link. Keep filenames unique across the vault so the bare form always works.
 - **Never `mv` a note.** Renaming breaks every inbound link silently. Use
   `node scripts/kg.ts move` / `rename` / `archive`, or Obsidian and Foam, which rewrite
-  inbound links the same way.
+  inbound links the same way. In Obsidian, Archive / Unarchive in the file menu runs the
+  CLI's own archive plan.
 - **Never run a note through a markdown or YAML serializer.** A round trip with no edit
   rewrites `---` to `***`, setext headings to ATX, list markers and indents. Edit in place.
 - **`*.icloud` files are empty placeholders**, not notes. Materialize first with
@@ -68,7 +70,16 @@ rewrites nothing.
 
 Layout: `scripts/lib/` is the vault logic and never prints or exits; `scripts/commands/`
 wraps it, one `Command` object each, registered in `commands/index.ts`; `scripts/cli.ts`
-parses flags and renders results. **Run `npm test` before committing a change to
+parses flags and renders results. Only the `lib/*-fs.ts` files (and `vocabulary.ts`,
+`unlink-missing.ts`) touch Node; `vault.ts`, `move.ts`, `archive.ts` and what they import
+are bundled into the Obsidian plugin, which runs on phones with no Node — keep them free
+of `node:` imports.
+
+The plugin lives in `plugins/sehlceris-markdown-knowledge-graph/` and is built into
+`.obsidian/plugins/sehlceris-markdown-knowledge-graph/`, which is committed because a phone
+cannot build it. **After changing `scripts/lib/` or the plugin, `npm run plugin:build`**;
+`npm test` fails on a stale bundle once `npm install` has run, and on a Node import
+reaching the plugin always. **Run `npm test` before committing a change to
 `scripts/`** — `node --test`, no install needed. A checker that cannot fail reports "ok",
 so a new check needs a passing case and a deliberately broken one. `npm install` then
 `npm run typecheck` type-checks; Obsidian is set to ignore `node_modules/` and `scripts/`.
